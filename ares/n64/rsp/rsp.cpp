@@ -14,6 +14,7 @@ RSP rsp;
 #include "debugger.cpp"
 #include "serialization.cpp"
 #include "disassembler.cpp"
+#include "emux.cpp"
 
 auto RSP::load(Node::Object parent) -> void {
   node = parent->append<Node::Object>("RSP");

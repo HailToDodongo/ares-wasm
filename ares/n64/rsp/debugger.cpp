@@ -58,6 +58,11 @@ auto RSP::Debugger::instruction() -> void {
       rsp.disassembler.showColors = 1;
     }
   }
+
+  if(tracer.instructionCountdown) {
+    if (--tracer.instructionCountdown == 0)
+      tracer.instruction->setEnabled(false);
+  }
 }
 
 auto RSP::Debugger::ioSCC(bool mode, u32 address, u32 data) -> void {
