@@ -34,6 +34,7 @@
 #define RDn    (OP >> 11 & 31)
 #define RTn    (OP >> 16 & 31)
 #define RSn    (OP >> 21 & 31)
+#define CODE   (OP >> 6 & 1023)
 #define VDn    (OP >>  6 & 31)
 #define VSn    (OP >> 11 & 31)
 #define VTn    (OP >> 16 & 31)
@@ -166,7 +167,7 @@ auto RSP::interpreterSPECIAL() -> void {
   op(0x33, INVALID);  //TLTU
   op(0x34, INVALID);  //TEQ
   op(0x35, INVALID);
-  op(0x36, INVALID);  //TNE
+  op(0x36, TNE, RS, RT, CODE); //TNE
   op(0x37, INVALID);
   op(0x38, INVALID);  //DSLL
   op(0x39, INVALID);

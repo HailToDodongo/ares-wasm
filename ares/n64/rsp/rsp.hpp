@@ -68,6 +68,7 @@ struct RSP : Thread, Memory::RCP<RSP> {
     struct Tracer {
       Node::Debugger::Tracer::Instruction instruction;
       Node::Debugger::Tracer::Notification io;
+      i32 instructionCountdown = 0;
     } tracer;
   } debugger;
 
@@ -475,6 +476,13 @@ struct RSP : Thread, Memory::RCP<RSP> {
   template<u8 e> auto VSUBC(r128& vd, cr128& vs, cr128& vt) -> void;
   template<u8 e> auto VXOR(r128& rd, cr128& vs, cr128& vt) -> void;
   template<u8 e> auto VZERO(r128& rd, cr128& vs, cr128& vt) -> void;
+
+  //emux.cpp
+  auto TNE(cr32& rt, cr32& rs, u32 code) -> void;
+  auto EMUX(cr32& rt, u32 code) -> void;
+  struct {
+    u32 buflen;
+  } emux;
 
 //unserialized:
   u16 reciprocals[512];
