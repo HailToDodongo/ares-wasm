@@ -52,9 +52,23 @@ auto RSP::Debugger::instruction() -> void {
   if(unlikely(tracer.instruction->enabled())) {
     u32 address = rsp.pipeline.address & 0xfff;
     u32 instruction = rsp.pipeline.instruction;
+    u32 cycle = rsp.pipeline.clocksTotal / 3;
+
+    bool hasDblIssues = rsp.pipeline.dblIssueCount > 0 && cycle != 0;
+    string cycleStr = hasDblIssues
+      ? string{"   ^"}
+      : pad(cycle, 4, ' ');
+
     if(tracer.instruction->address(address)) {
       rsp.disassembler.showColors = 0;
-      tracer.instruction->notify(rsp.disassembler.disassemble(address, instruction), {});
+      string res{"[", cycleStr, "] ", 
+        "\033[A", // cursor up
+          pad(pad("", rsp.pipeline.stallCount, '*'), 3, ' '),
+        "\033[B", // cursor down
+        " | ",
+        rsp.disassembler.disassemble(address, instruction)
+      };
+      tracer.instruction->notify(res, {});
       rsp.disassembler.showColors = 1;
     }
   }

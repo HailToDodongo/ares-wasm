@@ -3,11 +3,32 @@ auto RSP::TNE(cr32& rs, cr32& rt, u32 code) -> void {
   EMUX(rt, code);
 }
 
+namespace {
+  enum class FormatStage {
+    SEARCH_MARKER, 
+    IN_FORMAT,
+    IN_PLACEHOLDER,
+    IN_LANE,
+  };
+}
+
 auto RSP::EMUX(cr32& rt, u32 code) -> void {
+
+      static const char *mips_reg_names[32] = { "zr", "at", "v0", "v1", "a0",
+                                            "a1", "a2", "a3", "t0", "t1",
+                                            "t2", "t3", "t4", "t5", "t6",
+                                            "t7", "s0", "s1", "s2", "s3",
+                                            "s4", "s5", "s6", "s7", "t8",
+                                            "t9", "k0", "k1", "gp", "sp",
+                                            "fp", "ra" };
+
     switch (code) {
     case 0x20: // trace(start)
+        printf("[emux] trace start\n");
         debugger.tracer.instruction->setEnabled(true);
+        debugger.tracer.instruction->setTerminal(true);
         debugger.tracer.instructionCountdown = 0;
+        rsp.pipeline.clocksTotal = 0;
         break;
     case 0x21: // trace(count)
         printf("[emux] trace(count): %08x\n", rt.u32);
@@ -15,7 +36,9 @@ auto RSP::EMUX(cr32& rt, u32 code) -> void {
         debugger.tracer.instructionCountdown = rt.u32;
         break;
     case 0x22: // trace(stop)
+        debugger.tracer.instruction->setTerminal(false);
         debugger.tracer.instruction->setEnabled(false);
+        printf("[emux] trace stop\n");
         break;
     case 0x30: // log(byte)
         fputc(rt.u32 & 0xFF, stdout);
@@ -36,14 +59,115 @@ auto RSP::EMUX(cr32& rt, u32 code) -> void {
             fputc(dmem.read<Byte>(rt.u32 + i), stdout);
         }
         break;
+    case 0x34: { // log(formatted string)
+        std::string fmtReg;
+        std::string fmtLane;
+        char fmtType = 'x';
+        FormatStage stage = FormatStage::SEARCH_MARKER;
+
+        auto print_lane = [&](r128& vr, r128& vrNext, int lane, char fmt) {
+          switch(fmt) {
+            default:
+            case 'x': fprintf(stdout, "%04X", vr.u16(lane)); return;
+            case 'u': fprintf(stdout, "%u", vr.u16(lane)); return;
+            case 'd': fprintf(stdout, "%d", vr.s16(lane)); return;
+            case 'f':  {
+              s32 partInt = (s32)((u32)vr.u16(lane) << 16);
+              partInt |= vrNext.u16(lane);
+              f64 val = partInt;
+              val /= 65536.0f;
+
+              fprintf(stdout, "%.6f", val); 
+              return;
+            }
+          }
+        };
+
+        u32 i = 0;
+        do 
+        {
+            char c = dmem.read<Byte>(rt.u32 + i);
+
+            if(stage == FormatStage::SEARCH_MARKER && c == '%') {
+              stage = FormatStage::IN_FORMAT;
+              continue;
+            }
+
+            if(stage == FormatStage::IN_FORMAT) {
+              fmtType = c;
+              stage = FormatStage::IN_PLACEHOLDER;
+              continue;
+            }
+
+            if(stage == FormatStage::IN_PLACEHOLDER || stage == FormatStage::IN_LANE) 
+            {
+              bool isPlaceholderChar = (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '.';
+
+              if(!isPlaceholderChar) 
+              {
+                const char* fmt = fmtType == 'x' ? "%04X" : "%d";
+                bool isUnsigned = fmtType != 'd';
+
+                if(fmtReg[0] == 'v' && fmtReg.length() == 3) {
+                  auto regIdx = std::stoi(&fmtReg[1]);
+                  int lane = -1;
+                  if(fmtLane.length() >= 2) {
+                    lane = std::stoi(&fmtLane[1]);
+                  }
+
+                  auto &vr = vpu.r[regIdx];
+                  auto &vrNext = vpu.r[(regIdx+1)];
+
+                  if(lane < 0) {
+                    for(int i=0; i<7; ++i) {
+                      print_lane(vr, vrNext, i, fmtType);
+                      fputc(' ', stdout);
+                    }
+                    print_lane(vr, vrNext, 7, fmtType);
+                  } else {
+                    print_lane(vr, vrNext, lane, fmtType);
+                  }
+
+                } else {
+                  u32 r=0;
+                  for(const char* regName : mips_reg_names) {
+                    if(fmtReg == std::string_view{regName}) {
+                      if(fmtType == 'x') {
+                        fprintf(stdout, "%08X", isUnsigned ? ipu.r[r].u32 : ipu.r[r].s32);
+                      } else {
+                        fprintf(stdout, "%d", isUnsigned ? ipu.r[r].u32 : ipu.r[r].s32);
+                      }
+                    }
+                    ++r;
+                  }
+                }
+
+                fmtReg = "";
+                fmtLane = "";
+                fmtType = 'x';
+                stage = FormatStage::SEARCH_MARKER;
+                i--;
+                continue;
+              } else {
+                if(c == '.') {
+                  stage = FormatStage::IN_LANE; 
+                  continue; 
+                }
+                if(stage == FormatStage::IN_LANE) {
+                  fmtLane += c;
+                } else {
+                  fmtReg += c;
+                }
+                continue;
+              }
+            }
+
+            if (c == '\0')break;
+            fputc(c, stdout);
+
+        } while (++i < 4096);
+    }   break;
     case 0x40: case 0x48: { // dump_regs(gpr)
-        static const char *mips_reg_names[32] = { "zr", "at", "v0", "v1", "a0",
-                                                  "a1", "a2", "a3", "t0", "t1",
-                                                  "t2", "t3", "t4", "t5", "t6",
-                                                  "t7", "s0", "s1", "s2", "s3",
-                                                  "s4", "s5", "s6", "s7", "t8",
-                                                  "t9", "k0", "k1", "gp", "sp",
-                                                  "fp", "ra" };
         n32 mask = rt.u32;
         const char *fmt = code & 0x8 ? "%s: %-12d" : "%s: %04x %04x";
         bool partial = false;

@@ -29,7 +29,6 @@ struct Instruction : Tracer {
   }
 
   auto setEnabled(bool enabled) -> void {
-    //Tracer::setEnabled(enabled); // @TODO
     if(!enabled) {
       _omitted = 0;
       setMask(_mask);
