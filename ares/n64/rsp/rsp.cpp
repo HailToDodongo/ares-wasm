@@ -14,6 +14,7 @@ RSP rsp;
 #include "debugger.cpp"
 #include "serialization.cpp"
 #include "disassembler.cpp"
+#include "emux.cpp"
 
 auto RSP::load(Node::Object parent) -> void {
   node = parent->append<Node::Object>("RSP");
@@ -43,6 +44,7 @@ auto RSP::instruction() -> void {
   }
 
   if constexpr(Accuracy::RSP::Interpreter) {
+    pipeline.dblIssueCount = 0;
     u32 instruction = imem.read<Word>(ipu.pc);
     instructionPrologue(instruction);
     pipeline.begin();
@@ -55,6 +57,7 @@ auto RSP::instruction() -> void {
       OpInfo op1 = decoderEXECUTE(instruction);
 
       if(canDualIssue(op0, op1)) {
+        pipeline.dblIssueCount = 1;
         instructionEpilogue(0);
         instructionPrologue(instruction);
         pipeline.issue(op1);
@@ -69,6 +72,7 @@ auto RSP::instruction() -> void {
   //this handles all stepping for the interpreter
   //with the recompiler, it only steps for taken branch stalls
   step(pipeline.clocks);
+  pipeline.clocksTotal += pipeline.clocks;
 }
 
 auto RSP::instructionPrologue(u32 instruction) -> void {
@@ -80,6 +84,7 @@ auto RSP::instructionPrologue(u32 instruction) -> void {
 auto RSP::instructionEpilogue(u32 clocks) -> s32 {
   if constexpr(Accuracy::RSP::Recompiler) {
     step(clocks);
+    pipeline.clocksTotal += clocks;
   }
 
   ipu.r[0].u32 = 0;

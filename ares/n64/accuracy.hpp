@@ -11,7 +11,7 @@ struct Accuracy {
   };
 
   struct RSP {
-    static constexpr bool Interpreter = 0 | Reference | !recompiler::generic::supported;
+    static constexpr bool Interpreter = 1;//0 | Reference | !recompiler::generic::supported;
     static constexpr bool Recompiler = !Interpreter;
 
     //VU instructions
