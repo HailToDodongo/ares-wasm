@@ -5,6 +5,17 @@ struct RDRAM : Memory::RCP<RDRAM> {
 
   struct Writable : public Memory::Writable {
     RDRAM& self;
+    Memory::Writable hiddenBits;
+
+    void setHiddenBit(u32 address, bool isSet)
+    {
+      u32 idx = address / 2;
+      u32 bitPos = 1 - (address & 1);
+      auto bits = hiddenBits.read<1>(idx);
+      bits &= ~(1 << bitPos); // remove old value
+      bits |= (isSet << bitPos); // set new value
+      hiddenBits.write<1>(idx, bits);
+    }
 
     Writable(RDRAM& self) : self(self) {}
 
@@ -14,7 +25,28 @@ struct RDRAM : Memory::RCP<RDRAM> {
       if (unlikely(peripheral && system.homebrewMode)) {
         self.debugger.readWord(address, Size, peripheral);
       }
+      if (unlikely(mi.ebusTestMode())) {
+        u32 idx = address / 2;
+        auto bits0 = hiddenBits.read<1>(idx+0);
+        auto bits1 = hiddenBits.read<1>(idx+1);
+        return (bits0 << 2) | bits1;
+      }
       return Memory::Writable::read<Size>(address);
+    }
+
+    template<u32 Size>
+    auto writeAutoCVG(u32 address, u64 data) -> void {
+
+      if constexpr (Size == 1) { // only updates the current byte
+        setHiddenBit(address, (address & 1) ? (data & 1) : 0); // @TODO: retest if X%2 addresses really ignored the bit
+      }
+      else if constexpr (Size == 2) { // sets both bits based on the LSB
+        setHiddenBit(address+0, data & 1);
+        setHiddenBit(address+1, data & 1);
+      }
+      // @TODO: re-test 32 bit writes
+
+      Memory::Writable::write<Size>(address, data);
     }
 
     template<u32 Size>
@@ -36,43 +68,43 @@ struct RDRAM : Memory::RCP<RDRAM> {
       length = end - address;
 
       if (address & 1) {
-        Memory::Writable::write<Byte>(address, value >> 56);
+        writeAutoCVG<Byte>(address, value >> 56);
         value = (value << 8) | (value >> 56);
         address = (address & ~0x7FF) | ((address + 1) & 0x7FF);
         length -= 1;
       }
       if ((address & 2) && length >= 2) {
-        Memory::Writable::write<Half>(address, value >> 48);
+        writeAutoCVG<Half>(address, value >> 48);
         value = (value << 16) | (value >> 48);
         address = (address & ~0x7FF) | ((address + 2) & 0x7FF);
         length -= 2;
       }
       if ((address & 4) && length >= 4) {
-        Memory::Writable::write<Word>(address, value >> 32);
+        writeAutoCVG<Word>(address, value >> 32);
         value = (value << 32) | (value >> 32);
         address = (address & ~0x7FF) | ((address + 4) & 0x7FF);
         length -= 4;
       }
 
       while (length >= 8) {
-        Memory::Writable::write<Dual>(address, value);
+        writeAutoCVG<Dual>(address, value);
         address = (address & ~0x7FF) | ((address + 8) & 0x7FF);
         length -= 8;
       }
       if (length >= 4) {
-        Memory::Writable::write<Word>(address, value >> 32);
+        writeAutoCVG<Word>(address, value >> 32);
         value <<= 32;
         address += 4;
         length -= 4;
       }
       if (length >= 2) {
-        Memory::Writable::write<Half>(address, value >> 48);
+        writeAutoCVG<Half>(address, value >> 48);
         value <<= 16;
         address += 2;
         length -= 2;
       }
       if (length == 1)
-        Memory::Writable::write<Byte>(address, value >> 56);
+        writeAutoCVG<Byte>(address, value >> 56);
     }
 
     template<u32 Size>
@@ -84,22 +116,22 @@ struct RDRAM : Memory::RCP<RDRAM> {
       if (unlikely(mi.initializeMode())) {
         writeRepeat<Size>(address, value, mi.initializeLength()+1);
       } else {
-        Memory::Writable::write<Size>(address, value);
+        writeAutoCVG<Size>(address, value);
       }
     }
 
     template<u32 Size>
     auto writeBurst(u32 address, u32 *value, const char *peripheral) -> void {
       if (address >= size) return;
-      Memory::Writable::write<Word>(address | 0x00, value[0]);
-      Memory::Writable::write<Word>(address | 0x04, value[1]);
-      Memory::Writable::write<Word>(address | 0x08, value[2]);
-      Memory::Writable::write<Word>(address | 0x0c, value[3]);
+      writeAutoCVG<Word>(address | 0x00, value[0]);
+      writeAutoCVG<Word>(address | 0x04, value[1]);
+      writeAutoCVG<Word>(address | 0x08, value[2]);
+      writeAutoCVG<Word>(address | 0x0c, value[3]);
       if (Size == ICache) {
-        Memory::Writable::write<Word>(address | 0x10, value[4]);
-        Memory::Writable::write<Word>(address | 0x14, value[5]);
-        Memory::Writable::write<Word>(address | 0x18, value[6]);
-        Memory::Writable::write<Word>(address | 0x1c, value[7]);
+        writeAutoCVG<Word>(address | 0x10, value[4]);
+        writeAutoCVG<Word>(address | 0x14, value[5]);
+        writeAutoCVG<Word>(address | 0x18, value[6]);
+        writeAutoCVG<Word>(address | 0x1c, value[7]);
       }
     }
 
