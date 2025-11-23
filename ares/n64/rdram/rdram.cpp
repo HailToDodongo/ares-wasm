@@ -12,11 +12,14 @@ auto RDRAM::load(Node::Object parent) -> void {
 
   if(!system.expansionPak) {
     //4MB internal
-    ram.allocate(4_MiB); 
+    ram.allocate(4_MiB);
   } else {
     //4MB internal + 4MB expansion pak
     ram.allocate(4_MiB + 4_MiB);
   }
+
+  // parallelRDP stores hidden bits in 2-bit pairs (LSB)
+  ram.hiddenBits.allocate(ram.size / 2);
   
   debugger.load(node);                                                                                            
 }
@@ -24,12 +27,14 @@ auto RDRAM::load(Node::Object parent) -> void {
 auto RDRAM::unload() -> void {
   debugger = {};
   ram.reset();
+  ram.hiddenBits.reset();
   node.reset();
 }
 
 auto RDRAM::power(bool reset) -> void {
   if(!reset) {
     ram.fill();
+    ram.hiddenBits.fill();
     for(auto& chip : chips) chip = {};
   }
 }

@@ -127,6 +127,13 @@ auto Vulkan::render() -> bool {
 
     if(::RDP::Op(code) == ::RDP::Op::SyncFull) {
       implementation->processor->wait_for_timeline(implementation->processor->signal_timeline());
+
+      // @TODO: how exactly does parallelRDP update the RDRAM values?
+      // this here is a hack as i read just the entire RAM and ignore some parts to make my demo work
+      uint8_t *hiddenBitsBuff = (uint8_t*)implementation->processor->begin_read_hidden_rdram();
+      uint32_t offset = 1024*1024; // @TODO: HACK
+      memcpy(rdram.ram.hiddenBits.data + offset, hiddenBitsBuff + offset, implementation->processor->get_hidden_rdram_size() - offset);
+
       rdp.syncFull();
     }
 
@@ -226,7 +233,7 @@ Vulkan::Implementation::Implementation(u8* data, u32 size) {
   device.set_context(context);
   device.init_frame_contexts(3);
 
-  ::RDP::CommandProcessorFlags flags = 0;
+  ::RDP::CommandProcessorFlags flags = ::RDP::COMMAND_PROCESSOR_FLAG_HOST_VISIBLE_HIDDEN_RDRAM_BIT;
   switch(vulkan.internalUpscale) {
   case 2: flags |= ::RDP::COMMAND_PROCESSOR_FLAG_UPSCALING_2X_BIT; break;
   case 4: flags |= ::RDP::COMMAND_PROCESSOR_FLAG_UPSCALING_4X_BIT; break;
